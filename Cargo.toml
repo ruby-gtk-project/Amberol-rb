@@ -11,7 +11,7 @@ edition = "2018"
 color-thief = "0.2.1"
 gdk-pixbuf = { version = "0.21", features = ["v2_42"] }
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
-gtk = { version = "0.10", package = "gtk4", features = ["v4_16"] }
+gtk = { version = "0.11", package = "gtk4", features = ["v4_22"] }
 lofty = "0.22.2"
 log = "0.4"
 mpris-server = "0.8"
@@ -26,12 +26,12 @@ async-channel = "2.2.0"
 futures = "0.3"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-ashpd = {version = "0.12", default-features = false, features = ["gtk4", "async-std"]}
+ashpd = {version = "0.13", default-features = false, features = ["gtk4", "async-io", "background"]}
 
 [dependencies.adw]
 package = "libadwaita"
-version = "0.8"
-features = ["v1_5"]
+version = "0.9"
+features = ["v1_8"]
 
 [dependencies.gst]
 package = "gstreamer"
