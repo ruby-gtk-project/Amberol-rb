@@ -2,14 +2,14 @@
 # Copyright (C) 2024 amberol's COPYRIGHT HOLDER
 # This file is distributed under the same license as the amberol package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
-# Emilio Sepúlveda <emism.translations@gmail.com>, 2024-2025.
+# Emilio Sepúlveda <emism.translations@gmail.com>, 2024-2026.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: amberol main\n"
 "Report-Msgid-Bugs-To: https://gitlab.gnome.org/World/amberol/-/issues/\n"
-"POT-Creation-Date: 2025-09-13 17:32+0000\n"
-"PO-Revision-Date: 2025-09-13 16:35-0300\n"
+"POT-Creation-Date: 2026-07-08 19:26+0000\n"
+"PO-Revision-Date: 2026-09-10 21:33-0300\n"
 "Last-Translator: Emilio Sepúlveda <emism.translations@gmail.com>\n"
 "Language-Team: Interlingua <softinterlingua@gmail.com>\n"
 "Language: ia\n"
@@ -22,7 +22,8 @@ msgstr ""
 "X-DL-Branch: main\n"
 "X-DL-Domain: po\n"
 "X-DL-State: Translating\n"
-"X-Generator: Gtranslator 48.0\n"
+"X-Generator: Gtranslator 50.0\n"
+"X-DL-VCS-Web: https://gitlab.gnome.org/World/amberol\n"
 
 #: data/io.bassi.Amberol.desktop.in.in:2
 #: data/io.bassi.Amberol.metainfo.xml.in.in:6
@@ -77,6 +78,7 @@ msgid "MPRIS integration"
 msgstr "Integration de MPRIS"
 
 #: data/io.bassi.Amberol.metainfo.xml.in.in:48
+#: data/io.bassi.Amberol.metainfo.xml.in.in:50
 msgid "Emmanuele Bassi"
 msgstr "Emmanuele Bassi"
 
@@ -125,7 +127,7 @@ msgctxt "a11y"
 msgid "Shuffle"
 msgstr "Miscer"
 
-#: src/gtk/playback-control.blp:116 src/playback_control.rs:114
+#: src/gtk/playback-control.blp:116
 msgid "Enable Repeat"
 msgstr "Activar le repetition"
 
@@ -302,35 +304,40 @@ msgstr "Commutar le subfenestra de lista de reproduction"
 
 #: src/gtk/shortcuts-dialog.blp:57
 msgctxt "shortcut window"
+msgid "Search the playlist"
+msgstr "Cercar le lista de reproduction"
+
+#: src/gtk/shortcuts-dialog.blp:62
+msgctxt "shortcut window"
 msgid "Toggle shuffling songs"
 msgstr "Commutar le miscimento de cantiones"
 
-#: src/gtk/shortcuts-dialog.blp:63
+#: src/gtk/shortcuts-dialog.blp:68
 msgctxt "shortcut window"
 msgid "Playback"
 msgstr "Reproduction"
 
-#: src/gtk/shortcuts-dialog.blp:66
+#: src/gtk/shortcuts-dialog.blp:71
 msgctxt "shortcut window"
 msgid "Toggle play/pause"
 msgstr "Commutar reproducer/pausar"
 
-#: src/gtk/shortcuts-dialog.blp:71
+#: src/gtk/shortcuts-dialog.blp:76
 msgctxt "shortcut window"
 msgid "Previous song"
 msgstr "Cantion precedente"
 
-#: src/gtk/shortcuts-dialog.blp:76
+#: src/gtk/shortcuts-dialog.blp:81
 msgctxt "shortcut window"
 msgid "Next song"
 msgstr "Cantion sequente"
 
-#: src/gtk/shortcuts-dialog.blp:81
+#: src/gtk/shortcuts-dialog.blp:86
 msgctxt "shortcut window"
 msgid "Seek backwards in the current song"
 msgstr "Cercar a retro in le cantion actual"
 
-#: src/gtk/shortcuts-dialog.blp:86
+#: src/gtk/shortcuts-dialog.blp:91
 msgctxt "shortcut window"
 msgid "Seek forward in the current song"
 msgstr "Cercar avante in le cantion actual"
@@ -382,15 +389,15 @@ msgstr "Amberol necessita executar se in le fundo pro reproducer musica"
 msgid "Playback in progress"
 msgstr "Reproduction in curso"
 
-#: src/audio/song.rs:317
+#: src/audio/song.rs:341
 msgid "Unknown artist"
 msgstr "Artista incognite"
 
-#: src/audio/song.rs:324
+#: src/audio/song.rs:348
 msgid "Unknown title"
 msgstr "Titulo incognite"
 
-#: src/audio/song.rs:331
+#: src/audio/song.rs:355
 msgid "Unknown album"
 msgstr "Album incognite"
 
@@ -398,11 +405,15 @@ msgstr "Album incognite"
 msgid "Cover image"
 msgstr "Imagine de copertura"
 
-#: src/playback_control.rs:118
+#: src/playback_control.rs:115
+msgid "Do Not Repeat"
+msgstr "Non repeter"
+
+#: src/playback_control.rs:119
 msgid "Repeat All Songs"
 msgstr "Repeter tote le cantos"
 
-#: src/playback_control.rs:122
+#: src/playback_control.rs:123
 msgid "Repeat the Current Song"
 msgstr "Repeter le cantion actual"
 
@@ -418,7 +429,7 @@ msgstr "_Adder cantion"
 msgid "Open File"
 msgstr "Aperir file"
 
-#: src/window.rs:168 src/window.rs:190 src/window.rs:1482
+#: src/window.rs:168 src/window.rs:190 src/window.rs:1487
 msgid "Unable to access files"
 msgstr "Non poteva acceder al files"
 
@@ -430,42 +441,45 @@ msgstr "_Adder dossier"
 msgid "Open Folder"
 msgstr "Aperir dossier"
 
-#: src/window.rs:508
+#: src/window.rs:512
 msgid "No available song found"
 msgstr "Necun cantion disponibile trovate"
 
-#: src/window.rs:569
+#: src/window.rs:574
 msgid "No songs found"
 msgstr "Nulle cantiones trovate"
 
-#: src/window.rs:602
+#: src/window.rs:607
 msgid "Added a new song"
 msgstr "Addite un nove cantion"
 
-#: src/window.rs:603
+#: src/window.rs:608
 msgid "Play"
 msgstr "Reproducer"
 
 #. Translators: the `{}` must be left unmodified;
 #. it will be expanded to the number of songs added
 #. to the playlist
-#: src/window.rs:612
+#: src/window.rs:617
+#, rust-format
 msgid "Added one song"
 msgid_plural "Added {} songs"
 msgstr[0] "Addite un cantion"
 msgstr[1] "Addite {} cantiones"
 
-#: src/window.rs:1242
+#: src/window.rs:1247
 msgid "Unable to access dropped files"
 msgstr "Non poteva acceder al files deposite"
 
-#: src/window.rs:1336
+#: src/window.rs:1341
+#, rust-format
 msgid "{} minute"
 msgid_plural "{} minutes"
 msgstr[0] "{} minuta"
 msgstr[1] "{} minutas"
 
-#: src/window.rs:1347
+#: src/window.rs:1352
+#, rust-format
 msgid "{hours} hour {minutes} remaining"
 msgid_plural "{hours} hours {minutes} remaining"
 msgstr[0] "{hours} hora {minutes} restante"
@@ -474,19 +488,21 @@ msgstr[1] "{hours} horas {minutes} restante"
 #. Translators: the '{}' must be left unmodified, and
 #. it will be replaced by the number of minutes remaining
 #. in the playlist
-#: src/window.rs:1357
+#: src/window.rs:1362
+#, rust-format
 msgid "{} minute remaining"
 msgid_plural "{} minutes remaining"
 msgstr[0] "{} minuta restante"
 msgstr[1] "{} minutas restante"
 
-#: src/window.rs:1461
+#: src/window.rs:1466
 msgid "No song selected"
 msgstr "Nulle cantion seligite"
 
 #. Translators: The '{}' must be left unmodified, and
 #. it is expanded to the number of songs selected
-#: src/window.rs:1466
+#: src/window.rs:1471
+#, rust-format
 msgid "{} song selected"
 msgid_plural "{} songs selected"
 msgstr[0] "{} cantion seligite"
@@ -495,10 +511,11 @@ msgstr[1] "{} cantiones seligite"
 #. Translators: `{title}` and `{artist}` must be left
 #. untranslated; they will expand to the title and
 #. artist of the currently playing song, respectively
-#: src/window.rs:1522
+#: src/window.rs:1527
+#, rust-format
 msgid "Currently playing “{title}” by “{artist}”"
 msgstr "Actualmente in reproduction “{title}” per “{artist}”"
 
-#: src/window.rs:1559
+#: src/window.rs:1564
 msgid "Unable to open folder"
 msgstr "Non poteva aperir le dossier"
