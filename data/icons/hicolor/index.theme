@@ -1,0 +1,25 @@
+[Icon Theme]
+Name=Hicolor
+Comment=Amberol's own icons, from upstream's src/assets/icons and data/icons
+Directories=scalable/actions,scalable/apps,symbolic/apps
+
+[scalable/actions]
+Size=16
+MinSize=8
+MaxSize=512
+Context=Actions
+Type=Scalable
+
+[scalable/apps]
+Size=128
+MinSize=8
+MaxSize=512
+Context=Applications
+Type=Scalable
+
+[symbolic/apps]
+Size=16
+MinSize=8
+MaxSize=512
+Context=Applications
+Type=Scalable
