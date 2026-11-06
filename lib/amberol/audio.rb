@@ -4,12 +4,14 @@ require_relative "audio/controller"
 require_relative "audio/cover_cache"
 require_relative "audio/gst_backend"
 require_relative "audio/inhibit_controller"
+require_relative "audio/mpris_controller"
 require_relative "audio/player"
 require_relative "audio/player_state"
 require_relative "audio/queue"
 require_relative "audio/shuffle_list_model"
 require_relative "audio/song"
 require_relative "audio/tag_reader"
+require_relative "audio/waveform_generator"
 
 module Amberol
   # Audio playback.

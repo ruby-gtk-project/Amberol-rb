@@ -80,6 +80,7 @@ module Amberol
         setup_provider
         bind_state
         bind_queue
+        bind_waveform
         connect_signals
         restore_window_state
         set_initial_state
@@ -939,6 +940,15 @@ module Amberol
           queue.on_notify(:n_songs) { on_queue_length_changed }
           queue.on_notify(:repeat_mode) { playback_control.set_repeat_mode(queue.repeat_mode) }
           queue.on_notify(:current) { on_current_song_changed }
+        end
+      end
+
+      # The waveform view shows upstream's flat line, unprompted, until the
+      # generator's peaks for the current song arrive — from the cache
+      # instantly, or from the analysis pipeline a little later.
+      def bind_waveform
+        @player.waveform_generator.on_peaks_changed do
+          waveform_view.peaks = @player.waveform_generator.peaks
         end
       end
 

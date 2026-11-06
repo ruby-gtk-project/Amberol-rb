@@ -96,6 +96,17 @@
           buildInputs = gtkStack;
         };
 
+        # `gstreamer`'s extconf.rb pkg-configs against GStreamer core/base
+        # itself, not just glib, so its build inputs are gtkStack plus the
+        # GStreamer stack.
+        gstreamerGem = _attrs: {
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          # gstreamer-1.0.pc's Requires.private pulls in libunwind
+          # transitively (same chain-must-be-whole problem gtk4 has above),
+          # so it has to be on PKG_CONFIG_PATH alongside the GStreamer stack.
+          buildInputs = gtkStack ++ gstStack ++ [ pkgs.libunwind pkgs.elfutils pkgs.orc ];
+        };
+
         gemConfig = pkgs.defaultGemConfig // {
           gdk4 = rubyGnomeGem;
           gsk4 = rubyGnomeGem;
@@ -103,13 +114,19 @@
           graphene1 = rubyGnomeGem;
           adwaita = rubyGnomeGem;
           rsvg2 = rubyGnomeGem;
+          gstreamer = gstreamerGem;
         };
 
         # `makeSearchPath` would take each package's *first* output, and glib's
         # first output is `bin`, which carries no typelibs — hence the explicit
-        # `.out`. at-spi2-core is here for the Atk typelib.
+        # `.out`. at-spi2-core is here for the Atk typelib. gstStack is here
+        # too: `gstreamer_play` resolves GstPlay-1.0 and GstBadAudio-1.0 from
+        # gst-plugins-bad, and the `gstreamer` gem resolves Gst-1.0 and
+        # GstBase-1.0 from gstreamer core and GstVideo/GstAudio/GstTag/
+        # GstPbutils from gst-plugins-base — all at `require` time via
+        # GObject-Introspection, same as the GTK stack above.
         typelibPath = pkgs.lib.makeSearchPath "lib/girepository-1.0"
-          (map (drv: drv.out or drv) (gtkStack ++ [ pkgs.at-spi2-core ]));
+          (map (drv: drv.out or drv) (gtkStack ++ gstStack ++ [ pkgs.at-spi2-core ]));
 
         # nix/ and not the repo root: the root Gemfile is kettle-jem's
         # development bundle — rubocop, rspec, yard, the kettle-dev stack — and

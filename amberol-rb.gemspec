@@ -109,6 +109,18 @@ Gem::Specification.new do |spec|
   #       Development dependencies that require strictly newer Ruby versions should be in a "gemfile",
   #       and preferably a modular one (see gemfiles/modular/*.gemfile).
 
+  # Runtime: the toolkit the app is built on.
+  spec.add_dependency("glib2")
+  spec.add_dependency("gtk4")
+  spec.add_dependency("adwaita")
+
+  # Runtime: the playback backend. `gstreamer_play` provides GstPlay (what
+  # Gtk::MediaFile already wraps) and GstBadAudio; `gstreamer` provides the
+  # core Gst namespace (Gst.parse_launch, Gst::Bus, Gst::Pipeline) the
+  # waveform generator builds its analysis pipeline with.
+  spec.add_dependency("gstreamer_play", "~> 1.1")
+  spec.add_dependency("gstreamer", "~> 4.4")
+
   # Dev, Test, & Release Tasks
   spec.add_development_dependency("kettle-dev", "~> 3.1", ">= 3.1.26")             # ruby >= 3.4
 

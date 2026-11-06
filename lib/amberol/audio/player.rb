@@ -3,8 +3,10 @@
 require_relative "cover_cache"
 require_relative "gst_backend"
 require_relative "inhibit_controller"
+require_relative "mpris_controller"
 require_relative "player_state"
 require_relative "queue"
+require_relative "waveform_generator"
 
 module Amberol
   module Audio
@@ -26,14 +28,19 @@ module Amberol
       # How far into a song "previous" restarts it rather than skipping back.
       SKIP_PREVIOUS_THRESHOLD = 10
 
-      attr_reader :queue, :state
+      attr_reader :queue, :state, :waveform_generator
 
       def initialize(app_sender)
         @app_sender = app_sender
         @queue = Queue.new
         @state = PlayerState.new
         @backend = GstBackend.new(method(:process_action))
-        @controllers = [InhibitController.new]
+        @waveform_generator = WaveformGenerator.new
+        @controllers = [
+          InhibitController.new,
+          @waveform_generator,
+          MprisController.new(method(:process_action)),
+        ]
       end
 
       # Upstream's AudioPlayer::process_action, reachable from the backend and
