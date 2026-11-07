@@ -4,9 +4,10 @@ Survey of `origin/main` (Rust + blueprint) against `lib/` on the `ruby` branch,
 produced with the `component-identification` skill. One section per component,
 in the order a user meets it. No app code was written in this step.
 
-**Re-surveyed after the first porting pass.** The statuses below are against
-`lib/` as it stands now, not the single placeholder file the first survey
-found.
+**Re-surveyed a second time**, against `lib/` as it stands after the waveform
+generator, the MPRIS controller and the desktop packaging files landed. The
+previous version of this document (committed as `196c17f`) still called those
+three "missing"; they are not, and this revision corrects that.
 
 Upstream is gtk-rs with blueprint: **a component is a pair of files** — the
 `src/*.rs` subclass (properties, actions, signal handlers) and the matching
@@ -21,19 +22,23 @@ Target naming follows the one file already on `ruby`
 
 | | Upstream | `ruby` branch |
 |---|---:|---:|
-| Source files contributing UI | 21 (`src/*.rs`) + 8 `.blp` | 34 `lib/**/*.rb` (6292 lines) |
-| Distinct component units | 35 | 33 present, 1 partial, 2 missing |
+| Source files contributing UI | 21 (`src/*.rs`) + 8 `.blp` | 37 `lib/**/*.rb` (6863 lines) |
+| Distinct component units | 37 (incl. packaging + translations) | 36 present, 1 missing (translations) |
 | GAction names | 19 | 19 |
 | Accelerators | 13 | 13 |
 | CSS classes in `src/gtk/style.css` | 15 app-defined + 5 custom CSS names | all, in `data/style.css` |
 | GSettings keys | 5 | 5 (JSON-backed, see 32) |
 | Bundled symbolic icons | 17 | 17, under `data/icons/` |
+| Desktop entry / metainfo / D-Bus service | 3 files | 3, under `data/org.rubygtkproject.Amberol*` |
 | Translated catalogues (`po/`) | 54 languages | 0 — no `po/` directory |
 
-Two upstream units have no port file at all — `src/audio/waveform_generator.rs`
-and `src/audio/mpris_controller.rs` — and the port adds one file upstream has no
-counterpart for, `lib/amberol/audio/tag_reader.rb`, standing in for the `lofty`
-crate. Everything else below exists.
+Every upstream unit now has a port file, including the two that the previous
+survey found missing — `src/audio/waveform_generator.rs` and
+`src/audio/mpris_controller.rs` — and the packaging trio
+(`.desktop`/`.metainfo.xml`/`.service`). The port also still carries one file
+upstream has no counterpart for, `lib/amberol/audio/tag_reader.rb`, standing in
+for the `lofty` crate. The one remaining gap with no port file is `po/` itself
+— see item 36.
 
 ---
 
@@ -322,7 +327,7 @@ step. Not a literal match, but the behaviour is there.
 
 ## 10. `src/waveform_view.rs` → `lib/amberol/waveform_view.rb`
 
-Kind: **widget** (CSS name `waveformview`, a11y role Slider). Status: **partial** (no peak source — see gaps).
+Kind: **widget** (CSS name `waveformview`, a11y role Slider). Status: **present**.
 
 Custom-drawn seek bar. Property `position` (double). Custom signal
 `position-changed(double)`, consumed by the window to seek and play.
@@ -334,11 +339,12 @@ re-pushes them. Stylesheet: `waveformview { padding-bottom: 6px }`.
 
 Port state: `lib/amberol/waveform_view.rb` is a `Gtk::DrawingArea` with the same
 three controllers, the same `position-changed` signal and a `peaks=` setter that
-normalises and block-averages exactly as upstream does. **Nothing calls
-`peaks=`** — `lib/amberol/window.rb` never mentions the waveform's peaks, because
-`src/audio/waveform_generator.rs` has no port file. The view therefore draws
-upstream's flat-line fallback for every song, and seeking works but the waveform
-does not. This is the one functional gap inside an otherwise ported widget.
+normalises and block-averages exactly as upstream does.
+`lib/amberol/audio/waveform_generator.rb` now exists (ported from
+`src/audio/waveform_generator.rs`; see item 28), and `window.rb`'s
+`bind_waveform` wires its `on_peaks_changed` callback to
+`waveform_view.peaks =`, so the waveform draws real peaks, not the flat-line
+fallback.
 
 ---
 
@@ -450,8 +456,8 @@ the port's component graph. All present except the last two.
 | `src/audio/shuffle.rs` | `lib/amberol/audio/shuffle_list_model.rb` | model | shuffling `Gio.ListModel` wrapper with an anchor |
 | `src/audio/gst_backend.rs` | `lib/amberol/audio/gst_backend.rb` | backend | GStreamer `playbin` wrapper, ReplayGain element, seek, volume |
 | `src/audio/cover_cache.rs` | `lib/amberol/audio/cover_cache.rb` | support | global texture + palette cache |
-| `src/audio/waveform_generator.rs` | `lib/amberol/audio/waveform_generator.rb` | model | **missing.** Property `has-peaks`; a `gst` `level`-element pipeline that produces the peaks the waveform view draws |
-| `src/audio/mpris_controller.rs` | `lib/amberol/audio/mpris_controller.rb` | integration | **missing.** MPRIS2 — the desktop's media controls. `application.rb` already has the `:present` action handler the controller would raise the window with, and nothing else |
+| `src/audio/waveform_generator.rs` | `lib/amberol/audio/waveform_generator.rb` | model | present. Property `has-peaks`; a `gst` `level`-element pipeline (via the `gstreamer` gem's `Gst` namespace, since `GstPlay` cannot build an arbitrary analysis graph) that produces the peaks `WaveformView` draws, wired through `player.rb` and `window.rb#bind_waveform` |
+| `src/audio/mpris_controller.rs` | `lib/amberol/audio/mpris_controller.rb` | integration | present. MPRIS2 over raw `Gio::DBusConnection#register_object` (no Ruby binding for `mpris_server` or any MPRIS server library exists), instantiated in `player.rb` alongside the other controllers |
 | — (no upstream file; replaces the `lofty` crate) | `lib/amberol/audio/tag_reader.rb` | support | **port-only addition**, 758 lines. Reads ID3v2, Vorbis comment, MP4 and FLAC tags and embedded cover art in pure Ruby, feeding `audio/song.rb` |
 | `src/audio/inhibit_controller.rs` | `lib/amberol/audio/inhibit_controller.rb` | integration | suspend inhibitor, reason _("Playing music") |
 | `src/audio/controller.rs` | `lib/amberol/audio/controller.rb` | interface | the `Controller` trait the three controllers implement |
@@ -466,9 +472,9 @@ the port's component graph. All present except the last two.
 | `src/gtk/style.css` | `data/style.css` + `lib/amberol/style.rb` | present | every selector carried over, including the seven custom CSS names and the `--background-color-0..4` recolouring variables. `Style.load` adds the provider at the application priority; `window.rb` adds its own recolouring provider at 400, as upstream does |
 | `src/amberol.gresource.xml` + `src/assets/icons/*.svg` | `data/icons/hicolor/scalable/actions/` | present | all 17 bundled symbolics, registered via `Gtk::IconTheme#add_search_path` in `Style.load` instead of a GResource |
 | `data/icons/hicolor/**` | `data/icons/hicolor/**` | present | app icon, Devel variant and symbolic variants, renamed `org.rubygtkproject.Amberol*` |
-| `data/io.bassi.Amberol.desktop.in.in` | `data/*.desktop` | **missing** | also the only place `audio/*` MIME handling is declared, so the port cannot be a default audio handler |
-| `data/io.bassi.Amberol.metainfo.xml.in.in` | `data/*.metainfo.xml` | **missing** | |
-| `data/io.bassi.Amberol.service.in` | `data/*.service` | **missing** | D-Bus activation |
+| `data/io.bassi.Amberol.desktop.in.in` | `data/org.rubygtkproject.Amberol.desktop.in.in` | present | ported under the port's own app id |
+| `data/io.bassi.Amberol.metainfo.xml.in.in` | `data/org.rubygtkproject.Amberol.metainfo.xml.in.in` | present | |
+| `data/io.bassi.Amberol.service.in` | `data/org.rubygtkproject.Amberol.service.in` | present | D-Bus activation |
 | `po/` (54 languages, `LINGUAS`, `POTFILES.in`) | `po/` | **missing** | there is no `po/` directory. `lib/amberol/i18n.rb` implements all twelve upstream entry points and looks catalogues up through ruby-gettext when present, so every string is already wrapped — but with no catalogues every locale falls back to English. `POTFILES.in`'s ten translatable upstream files correspond to `window.rb`, `playback_control.rb`, `playlist_view.rb`, `queue_row.rb`, `shortcuts_dialog.rb`, `primary_menu.rb`, `application.rb`, `about_dialog.rb`, `cover_picture.rb`, `audio/song.rb` and `audio/inhibit_controller.rb` |
 
 ---
@@ -494,7 +500,7 @@ the port's component graph. All present except the last two.
 | 7 | `src/song_cover.rs` + `.blp` | `lib/amberol/song_cover.rb` | widget | yes |
 | 8 | `src/song_details.rs` + `.blp` | `lib/amberol/song_details.rb` | widget | yes |
 | 9 | `src/marquee.rs` | `lib/amberol/marquee.rb` | widget | yes (ScrolledWindow reimplementation) |
-| 10 | `src/waveform_view.rs` | `lib/amberol/waveform_view.rb` | widget | partial — drawn and interactive, but never fed peaks |
+| 10 | `src/waveform_view.rs` | `lib/amberol/waveform_view.rb` | widget | yes — drawn, interactive and fed real peaks |
 | 11 | `src/cover_picture.rs` | `lib/amberol/cover_picture.rb` | widget | yes |
 | 12 | `src/drag_overlay.rs` | `lib/amberol/drag_overlay.rb` | widget | yes |
 | 13 | `src/gtk/shortcuts-dialog.blp` | `lib/amberol/shortcuts_dialog.rb` | shortcuts dialog | yes (3 sections, 15 items) |
@@ -512,46 +518,38 @@ the port's component graph. All present except the last two.
 | 25 | `src/audio/shuffle.rs` | `lib/amberol/audio/shuffle_list_model.rb` | model | yes |
 | 26 | `src/audio/gst_backend.rs` | `lib/amberol/audio/gst_backend.rb` | backend | yes |
 | 27 | `src/audio/cover_cache.rs` | `lib/amberol/audio/cover_cache.rb` | support | yes |
-| 28 | `src/audio/waveform_generator.rs` | `lib/amberol/audio/waveform_generator.rb` | model | **no** |
-| 29 | `src/audio/mpris_controller.rs` | `lib/amberol/audio/mpris_controller.rb` | integration | **no** |
+| 28 | `src/audio/waveform_generator.rs` | `lib/amberol/audio/waveform_generator.rb` | model | yes |
+| 29 | `src/audio/mpris_controller.rs` | `lib/amberol/audio/mpris_controller.rb` | integration | yes |
 | 30 | `src/audio/inhibit_controller.rs` | `lib/amberol/audio/inhibit_controller.rb` | integration | yes |
 | 31 | `src/audio/controller.rs` | `lib/amberol/audio/controller.rb` | interface | yes |
 | 32 | `data/io.bassi.Amberol.gschema.xml` | `lib/amberol/settings.rb` | settings | yes (JSON, not GSettings) |
 | 33 | `src/gtk/style.css` | `data/style.css`, `lib/amberol/style.rb` | stylesheet | yes |
 | 34 | `src/amberol.gresource.xml`, `src/assets/icons/*` | `data/icons/` | resources | yes |
-| 35 | `data/*.desktop.in.in`, `*.metainfo.xml.in.in`, `*.service.in` | `data/` | packaging | **no** |
+| 35 | `data/*.desktop.in.in`, `*.metainfo.xml.in.in`, `*.service.in` | `data/org.rubygtkproject.Amberol*` | packaging | yes |
 | 36 | `po/` (54 languages) | `po/` | translations | **no** |
 | 37 | — (replaces the `lofty` crate) | `lib/amberol/audio/tag_reader.rb` | support | port-only addition |
 
 ## Remaining work
 
-In the order it bites a user.
+The waveform generator, the MPRIS controller and the desktop packaging trio
+(`.desktop`/`.metainfo.xml`/`.service`), all flagged missing by the previous
+survey, now have port files (items 28, 29 and 35) and are wired in. What is
+left, in the order it bites a user:
 
-1. **The waveform never draws.** `src/audio/waveform_generator.rs` has no port
-   file, so `WaveformView#peaks=` is never called and every song shows the
-   flat-line fallback. Upstream builds a short-lived GStreamer pipeline with a
-   `level` element over the song's URI and collects per-channel peaks. This is
-   the largest visible parity gap and the only one inside a widget that
-   otherwise exists.
-2. **No translations.** There is no `po/` directory; `i18n.rb` and every call
+1. **No translations.** There is no `po/` directory; `i18n.rb` and every call
    site are ready for one. Extracting a `.pot` from `lib/` and importing
    upstream's 54 catalogues is mechanical but has not been started. Note the
-   msgids must match upstream's exactly for the import to hit.
-3. **No MPRIS.** `src/audio/mpris_controller.rs` has no port file, so the
-   desktop's media keys, lock-screen controls and the Sound panel do not see
-   the player. Needs a D-Bus service exporting `org.mpris.MediaPlayer2` and
-   `org.mpris.MediaPlayer2.Player`; the only part in place is the `:present`
-   action handler in `application.rb` that such a controller would call.
-4. **No packaging data.** No `.desktop`, `.metainfo.xml` or D-Bus `.service`
-   file, so the port cannot be launched from a desktop shell, cannot be
-   registered as an `audio/*` handler, and cannot be D-Bus activated.
-5. **No XDG background portal request.** `app.background-play` takes and drops
+   msgids must match upstream's exactly for the import to hit. No one has
+   built this yet.
+2. **No XDG background portal request.** `app.background-play` takes and drops
    the application hold, but nothing asks the portal for background permission,
-   so a sandboxed build would be killed instead of continuing to play.
-6. **`PULSE_PROP_*` not set.** Upstream's `main.rs` sets the PulseAudio media
+   so a sandboxed build would be killed instead of continuing to play. No one
+   has built this yet.
+3. **`PULSE_PROP_*` not set.** Upstream's `main.rs` sets the PulseAudio media
    role and application name so the Sound panel labels the stream; the port does
-   not.
-7. **Settings are not GSettings.** The five keys live in a JSON file under
-   `XDG_CONFIG_HOME` rather than a compiled schema. Deliberate — it keeps a
-   checkout runnable — but it means nothing else on the system can read or write
-   the app's preferences, and no `data/*.gschema.xml` ships.
+   not. No one has built this yet.
+4. **Settings are not GSettings.** The five keys live in a JSON file under
+   `XDG_CONFIG_HOME` instead of a compiled schema, so nothing else on the
+   system can read or write the app's preferences through GSettings, and no
+   `data/*.gschema.xml` ships. No one has built the compiled-schema path; the
+   JSON file is a workaround, not a replacement.
