@@ -1,0 +1,11 @@
+data/org.rubygtkproject.Amberol.desktop.in.in
+data/org.rubygtkproject.Amberol.metainfo.xml.in.in
+lib/amberol/about_dialog.rb
+lib/amberol/application.rb
+lib/amberol/audio/inhibit_controller.rb
+lib/amberol/audio/song.rb
+lib/amberol/playback_control.rb
+lib/amberol/playlist_view.rb
+lib/amberol/primary_menu.rb
+lib/amberol/shortcuts_dialog.rb
+lib/amberol/window.rb

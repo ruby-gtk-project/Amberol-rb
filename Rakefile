@@ -71,6 +71,48 @@ desc "Generate YARD documentation"
 task docs: "yard"
 
 # simplecov:disable
+# Translation catalogue. Upstream's whole po/ directory (54 languages) moved
+# over unchanged; this task compiles it to .mo files the app can load. See
+# lib/amberol/i18n.rb and po/POTFILES.in.
+#
+# GetText::Tools::Task's own file layout expects each locale's .po nested
+# under po/<locale>/<domain>.po, one directory per language; GNOME's (and
+# this po/'s) layout is the flat po/<locale>.po every other tool in the
+# ecosystem expects, so the compile step is written by hand against
+# GetText::Tools::MsgFmt instead of GetText::Tools::Task. The .po files
+# themselves are upstream's donated translations and are never regenerated
+# or merged against a freshly extracted .pot — rxgettext's marker list is
+# fixed and does not know I18n.i18n/ni18n_f/etc (only gettext's own
+# `_`/`n_`/`gettext` family), so any such merge would mark every donated
+# message "not found in source" and strip it.
+begin
+  require "gettext/tools/msgfmt"
+
+  namespace :gettext do
+    namespace :mo do
+      desc "Compile po/<locale>.po to po/<locale>/LC_MESSAGES/amberol.mo"
+      task :update do
+        File.read(File.join(__dir__, "po", "LINGUAS")).split.each do |locale|
+          po_file = File.join(__dir__, "po", "#{locale}.po")
+          mo_directory = File.join(__dir__, "po", locale, "LC_MESSAGES")
+          mo_file = File.join(mo_directory, "amberol.mo")
+          FileUtils.mkdir_p(mo_directory)
+          GetText::Tools::MsgFmt.run(po_file, "--output", mo_file)
+        end
+      end
+    end
+  end
+  desc "Update *.mo"
+  task gettext: "gettext:mo:update"
+rescue LoadError
+  desc "Compile translation catalogues (gettext gem not available)"
+  task "gettext:mo:update" do
+    warn "gettext gem is not available; skipping .mo compilation."
+  end
+end
+# simplecov:enable
+
+# simplecov:disable
 ### MONOREPO FAMILY TASKS
 if Dir.exist?(File.join(__dir__, "gems"))
   def family_gem_dirs

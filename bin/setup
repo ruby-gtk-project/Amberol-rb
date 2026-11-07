@@ -34,3 +34,7 @@ fi
 bundle "${bundle_args[@]}"
 
 # Do any other automated setup that you need to do here
+
+# Compile the translation catalogues (po/*.po -> po/<locale>/LC_MESSAGES/amberol.mo).
+# See lib/amberol/i18n.rb and the Rakefile's gettext:mo:update task.
+bundle exec rake gettext:mo:update

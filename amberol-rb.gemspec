@@ -121,6 +121,11 @@ Gem::Specification.new do |spec|
   spec.add_dependency("gstreamer_play", "~> 1.1")
   spec.add_dependency("gstreamer", "~> 4.4")
 
+  # Runtime: the message catalogue. Pure Ruby, needs no system gettext
+  # tooling; lib/amberol/i18n.rb looks it up lazily and falls back to the
+  # msgid itself when it is missing.
+  spec.add_dependency("gettext", "~> 3.4")
+
   # Dev, Test, & Release Tasks
   spec.add_development_dependency("kettle-dev", "~> 3.1", ">= 3.1.26")             # ruby >= 3.4
 
