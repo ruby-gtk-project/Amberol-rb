@@ -20,8 +20,22 @@ rescue LoadError => error
 end
 
 # External RSpec & related config
-require "kettle/test/rspec"
-# `kettle/test/rspec` installs harness helpers documented in spec/README.md.
+begin
+  require "kettle/test/rspec"
+  # `kettle/test/rspec` installs harness helpers documented in spec/README.md.
+rescue LoadError => error
+  # The kettle-test bundle is a development dependency and is not always
+  # installed — `nix develop` carries the app's runtime gems plus rspec, and
+  # nothing else. The examples in this suite use plain RSpec, so a missing
+  # harness is worth noting and not worth failing over; anything that genuinely
+  # needs a helper from it will fail on the helper, which says so far more
+  # clearly than a LoadError in spec_helper.
+  unless error.message.include?("kettle")
+    raise error
+  end
+
+  warn("NOTE: kettle-test isn't installed; running with plain RSpec.")
+end
 
 # This library
 require "amberol/rb"
