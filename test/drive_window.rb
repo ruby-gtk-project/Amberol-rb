@@ -205,6 +205,9 @@ Dir.mktmpdir("amberol-drive") do |root|
       d.check("title") { window.song_details.title_label.label_text == "Track 0" }
       d.check("artist") { window.song_details.artist_label.label_text == "Artist 0" }
       d.check("elapsed starts at 0:00") { window.elapsed_label.text == "0:00" }
+      d.check("the cover stack shows the placeholder (no art in these WAVE files)") do
+        window.song_cover.cover_stack.visible_child_name == "no-image"
+      end
     end
 
     d.step("win.seek-forward and win.seek-backwards do not raise") do
