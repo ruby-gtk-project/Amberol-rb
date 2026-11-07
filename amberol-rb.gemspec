@@ -114,15 +114,13 @@ Gem::Specification.new do |spec|
   spec.add_dependency("gtk4")
   spec.add_dependency("adwaita")
 
-  # Runtime: the playback backend. `gstreamer_play` provides GstPlay (what
-  # Gtk::MediaFile already wraps) and GstBadAudio; `gstreamer` provides the
-  # core Gst namespace (Gst.parse_launch, Gst::Bus, Gst::Pipeline) the
-  # waveform generator builds its analysis pipeline with.
-  #
-  # NOTE: `gstreamer_play` and `gstreamer` cannot both be exercised in one
-  # process — see the long comment in lib/amberol/audio/gst_backend.rb for
-  # the reproducible segfault. Kept here because GstPlay/GstBadAudio really
-  # is what upstream's playback backend binds; lib/ does not call it.
+  # Runtime: the playback backend. `gstreamer_play` provides GstPlay
+  # (`GstPlay::Play`, which lib/amberol/audio/gst_backend.rb drives directly,
+  # the same way upstream's Rust backend does) and GstBadAudio; `gstreamer`
+  # provides the core Gst namespace (Gst.parse_launch, Gst::Bus,
+  # Gst::ElementFactory) the waveform generator's analysis pipeline and the
+  # backend's rgvolume/rglimiter ReplayGain filter both build on. Both gems
+  # load and run together in the same process without issue.
   spec.add_dependency("gstreamer_play", "~> 1.1")
   spec.add_dependency("gstreamer", "~> 4.4")
 

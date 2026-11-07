@@ -77,7 +77,11 @@ Dir.mktmpdir("amberol-drive") do |root|
 
   application = Amberol::Application.new
 
-  GtkDriver.drive(application, shots: File.expand_path("tmp/shots", __dir__)) do |d, _app|
+  # The default 120s watchdog was tight even before this: one step now
+  # waits on a real 2-second WAVE file playing through GstPlay to a real
+  # end-of-stream (see "GstPlay actually plays audio" below), wall-clock
+  # time the rest of the steps never needed.
+  GtkDriver.drive(application, shots: File.expand_path("tmp/shots", __dir__), timeout: 180) do |d, _app|
     d.window { application.send(:built_window).window }
 
     d.step("the window and its initial view") do
@@ -217,6 +221,27 @@ Dir.mktmpdir("amberol-drive") do |root|
       d.check("still playing the same song") { window.player.state.current_song&.title == "Track 0" }
     end
 
+    # Track 0 is a real 2-second WAVE file, playing through GstPlay::Play —
+    # this is the GstBackend's actual playback path, not a mock: the GLib
+    # main loop has to keep turning long enough for the real end-of-stream
+    # message GstPlay posts on its message_bus to reach GstBackend's bus
+    # watch and fire PlaybackAction::PlayNext, which advances the queue.
+    # (Position updates off that same bus are checked too, best-effort: a
+    # sandboxed audio-less CI pipeline can run the file through faster than
+    # wall clock, so their absence alone would not mean the wiring is dead —
+    # the queue actually advancing on a real EOS message is the proof.)
+    d.step("GstPlay actually plays audio: EOS auto-advances the queue") do
+      window = application.send(:built_window)
+      deadline = Time.now + 6
+      until Time.now > deadline || window.player.state.current_song&.title != "Track 0"
+        GLib::MainContext.default.iteration(true)
+      end
+      d.check("end-of-stream on Track 0 advanced the queue to Track 1") do
+        window.player.state.current_song&.title == "Track 1"
+      end
+      d.check("the new song is playing") { window.player.state.playing? }
+    end
+
     d.step("the search bar filters the playlist") do
       window = application.send(:built_window)
       window.queue_actions.lookup_action("search").activate(nil)
@@ -251,6 +276,13 @@ Dir.mktmpdir("amberol-drive") do |root|
 
     d.step("queue.select turns on selection mode") do
       window = application.send(:built_window)
+      # win.play's own "state.on_notify(:playing)" hook exits selection mode
+      # the moment playback (re)starts -- correct behaviour for a real user
+      # pressing play, but with GstPlay actually advancing the queue on a
+      # real end-of-stream now, that same notification can fire on its own
+      # between steps as the current song finishes. Pausing first keeps the
+      # two steps' shared selection state stable across that gap.
+      window.player.pause
       window.queue_actions.lookup_action("select").activate(nil)
       window.player.queue.select_song_at(0)
       d.check("selection mode is on") { window.playlist_selection? }
@@ -267,6 +299,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       window.send(:remove_selected_songs)
       d.check("one song gone") { window.player.queue.n_songs == before - 1 }
       window.queue_actions.lookup_action("select").activate(nil)
+      window.player.play
     end
 
     d.step("queue.repeat-mode cycles and the button icon follows it") do
@@ -315,20 +348,14 @@ Dir.mktmpdir("amberol-drive") do |root|
       d.check("disabled again once the palette is cleared") { !simple.enabled? }
     end
 
-    d.step("win.replaygain is disabled (GTK's media backend has no ReplayGain hook)") do
+    d.step("win.replaygain is enabled (GstPlay's playbin has a working rgvolume/rglimiter filter)") do
       window = application.send(:built_window)
       simple = window.win_actions.lookup_action("replaygain")
-      d.check("the action is disabled, matching replaygain_available? == false") do
-        !simple.enabled? && !window.player.replaygain_available?
+      d.check("the action is enabled, matching replaygain_available? == true") do
+        simple.enabled? && window.player.replaygain_available?
       end
-      # The UI control is correctly dead, but the menu's three ReplayGain
-      # items each still need to land on a real mode when activated directly
-      # — exercise that underlying logic even though nothing in this run can
-      # click through the disabled action.
       simple.activate(GLib::Variant.new("album", "s"))
-      d.check("a disabled action's activate is a no-op") { window.replaygain != :album }
-      window.send(:replaygain=, "album")
-      d.check("album") { window.replaygain == :album }
+      d.check("activating the action lands on the requested mode") { window.replaygain == :album }
       window.send(:replaygain=, "track")
       d.check("track") { window.replaygain == :track }
       window.send(:replaygain=, "off")

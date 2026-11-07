@@ -157,8 +157,18 @@ module Amberol
         end
       end
 
+      # `GLib.user_cache_dir` resolves `$XDG_CACHE_HOME` (falling back to
+      # `$HOME/.cache`) once per process the first time GLib itself needs it,
+      # which can be before this app ever runs -- a test that overrides
+      # `ENV["XDG_CACHE_HOME"]` to sandbox itself would otherwise still land
+      # on the real cache dir. Reading the env var directly here keeps this
+      # call live to whatever the current process has it set to.
       def cache_subdir(name)
-        File.join(GLib.user_cache_dir, "amberol", name).tap do |path|
+        File.join(
+          ENV["XDG_CACHE_HOME"].then { |value| value.nil? || value.empty? ? File.join(Dir.home, ".cache") : value },
+          "amberol",
+          name,
+        ).tap do |path|
           FileUtils.mkdir_p(path, mode: 0o755)
         end
       end

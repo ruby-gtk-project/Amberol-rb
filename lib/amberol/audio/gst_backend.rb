@@ -1,92 +1,112 @@
 # frozen_string_literal: true
 
-require "gtk4"
+require "gstreamer"
+require "gstreamer_play"
 
 module Amberol
   module Audio
+    # Builds the rgvolume/rglimiter ReplayGain filter bin and installs it on
+    # (or clears it from) a playbin's `audio-filter` property.
+    #
+    # Ported from upstream's `GstReplayGain` in src/audio/gst_backend.rs: a
+    # small bin wrapping `rgvolume` linked into `rglimiter`, with ghost pads
+    # standing in for the bin's own sink/src, so it can be handed to a
+    # playbin as a single element.
+    class ReplayGainFilter
+      def self.build
+        rg_volume = Gst::ElementFactory.make("rgvolume", "rg volume")
+        rg_limiter = Gst::ElementFactory.make("rglimiter", "rg limiter")
+        if rg_volume.nil? || rg_limiter.nil?
+          nil
+        else
+          new(rg_volume, rg_limiter)
+        end
+      end
+
+      def initialize(rg_volume, rg_limiter)
+        @rg_volume = rg_volume
+        @bin = Gst::Bin.new("filter bin").tap do |bin|
+          bin.add(rg_volume)
+          bin.add(rg_limiter)
+          rg_volume.link(rg_limiter)
+          bin.add_pad(ghost_pad("src", rg_limiter.get_static_pad("src")))
+          bin.add_pad(ghost_pad("sink", rg_volume.get_static_pad("sink")))
+        end
+      end
+
+      # Installs the bin as `pipeline`'s audio-filter in `album_mode` or
+      # `track` mode, or clears the filter entirely for `:off` — upstream's
+      # `GstReplayGain#set_mode`.
+      def apply(pipeline, mode)
+        case mode
+        when :album then enable(pipeline, album_mode: true)
+        when :track then enable(pipeline, album_mode: false)
+        else pipeline.set_property("audio-filter", nil)
+        end
+      end
+
+      private
+
+        def enable(pipeline, album_mode:)
+          @rg_volume.set_property("album-mode", album_mode)
+          pipeline.set_property("audio-filter", @bin)
+        end
+
+        def ghost_pad(name, target)
+          target.active = true
+          Gst::GhostPad.new(name, target)
+        end
+    end
+
     # The playback backend.
     #
-    # Ported from upstream's src/audio/gst_backend.rs, which wraps GstPlay and
-    # posts playback actions back to the player over a channel. GTK4's own
-    # media backend *is* a GstPlay wrapper, and the Ruby bindings expose it as
-    # Gtk::MediaFile, so that is what plays the audio here: the same set of
-    # operations (set a uri, play, pause, stop, seek, set the volume) and the
-    # same four actions posted back — PlayNext at end of stream, UpdatePosition
-    # while playing, UpdatePosition after a seek, and VolumeChanged.
+    # Ported from upstream's src/audio/gst_backend.rs: drives playback
+    # through `gst_play::Play` directly (the `gstreamer_play` gem's
+    # `GstPlay::Play`), the same way upstream does, with the same
+    # rgvolume/rglimiter ReplayGain filter bin installed as the playbin's
+    # `audio-filter`.
+    #
+    # GstPlay posts every event — errors, warnings, end-of-stream, position
+    # updates, seek completion, volume changes — as messages on its own
+    # `message_bus`, a plain `Gst::Bus`; {#watch_bus} watches it the same way
+    # {WaveformGenerator} watches its own analysis pipeline's bus, and turns
+    # each into the matching PlaybackAction.
     #
     # `sender` is the proc the player hands over; it takes an action name and
-    # its arguments, exactly as upstream's glib::Sender takes a PlaybackAction.
-    #
-    # On driving upstream's actual backend, `gst_play::Play` (the `gstreamer_play`
-    # gem's GstPlay::Play), directly instead of going through Gtk::MediaFile:
-    # it loads fine on its own, but the moment `GstPlay::Play.new` runs in a
-    # process that has also `require "gstreamer"` loaded — which this app's
-    # own {WaveformGenerator} does, for `Gst.parse_launch` and `Gst::Bus`, a
-    # need GstPlay cannot fill since it builds only a `playbin3` — GLib logs
-    #
-    #   GLib-GObject-CRITICAL **: g_object_get: assertion 'G_IS_OBJECT (object)' failed
-    #
-    # and the process segfaults inside ruby-gnome's own glib2 log handler
-    # (`rbglib_log_handler` -> `g_logv`) before a single playback call is
-    # made. Reproduced repeatedly, in every require order tried (gstreamer
-    # before gstreamer_play, after, with and without gtk4/adwaita loaded
-    # first): both gems independently bind the shared `Gst-1.0` typelib into
-    # two distinct sets of Ruby wrapper classes for the same GTypes, and that
-    # double registration is fatal as soon as either binding's code actually
-    # touches a live GObject, not merely from requiring both.
-    #
-    # Since this app also needs the `gstreamer` gem's raw `Gst` namespace for
-    # waveform analysis (see {WaveformGenerator}), and a C-level segfault
-    # cannot be rescued from Ruby, `gstreamer_play` cannot be wired into the
-    # live playback path without taking the whole app down. The dependency
-    # is kept — GstPlay/GstBadAudio is genuinely what upstream uses for
-    # playback and ReplayGain — but this backend does not call it; see
-    # `set_replaygain`/`replaygain_available?` below for the one feature
-    # (upstream's rgvolume/rglimiter ReplayGain filter) that gap leaves open.
+    # its arguments, exactly as upstream's glib::Sender takes a
+    # PlaybackAction.
     class GstBackend
       # Upstream configures GstPlay with a 250ms position update interval.
       POSITION_UPDATE_INTERVAL = 250
 
-      # Gtk::MediaStream works in microseconds; the app in whole seconds.
-      USECS_PER_SEC = 1_000_000
-
       def initialize(sender)
         @sender = sender
         @replaygain = :off
-        @position_source = nil
-        @file = nil
-        connect_signals
+        @replaygain_filter = ReplayGainFilter.build
+        configure_player
+        watch_bus
       end
 
-      # The GFile handed to the media stream is kept in @file: GStreamer's
-      # streaming thread touches it long after this call returns, and a Ruby
-      # wrapper that falls out of scope takes the GObject's last reference
-      # with it, which crashes that thread rather than this one.
+      # `GstPlay::Play#uri=` with a real `nil` segfaults the Ruby binding
+      # (confirmed directly, outside this app too — setting the URI string
+      # property to NULL crashes inside the introspection marshaling, not
+      # inside libgstplay itself). An empty string clears playback the same
+      # way upstream's `set_uri(None)` does, without that crash; `#stop`
+      # first so nothing is still streaming against the uri being cleared.
       def set_song_uri(uri)
         if uri.nil?
-          @file = nil
-          media.clear
+          gst_player.stop
+          gst_player.set_uri("")
         else
-          @file = Gio::File.new_for_uri(uri)
-          media.file = @file
+          gst_player.uri = uri
         end
       end
 
-      def play
-        media.play
-        start_position_updates
-      end
+      def play = gst_player.play
 
-      def pause
-        media.pause
-        stop_position_updates
-      end
+      def pause = gst_player.pause
 
-      def stop
-        media.playing = false
-        media.seek(0)
-        stop_position_updates
-      end
+      def stop = gst_player.stop
 
       # Seeks `offset` seconds from `position`, clamped to the song, in the
       # direction asked for — upstream's GstBackend::seek.
@@ -103,81 +123,92 @@ module Amberol
         end
       end
 
-      def seek_position(position)
-        if media.seekable?
-          media.seek(position * USECS_PER_SEC)
-          send_position(position, true)
-        end
-      end
+      def seek_position(position) = gst_player.seek(position * Gst::SECOND)
 
       def seek_start = seek_position(0)
 
       # The UI works in the cubic volume scale a slider wants; GStreamer (and
-      # Gtk::MediaStream with it) works in the linear one.
-      def set_volume(volume)
-        media.volume = cubic_to_linear(volume)
-      end
+      # `GstPlay::Play`) works in the linear one.
+      def set_volume(volume) = gst_player.set_volume(cubic_to_linear(volume))
 
-      def volume = linear_to_cubic(media.volume)
+      def volume = linear_to_cubic(gst_player.volume)
 
       # Upstream builds an rgvolume/rglimiter filter bin via `gst_play::Play`'s
-      # own playbin and installs it as the pipeline's audio-filter. Doing
-      # that here would mean driving the backend through `gstreamer_play`'s
-      # GstPlay::Play instead of Gtk::MediaFile — see the class comment above
-      # for why that reproducibly segfaults this app (it shares a process
-      # with the `gstreamer` gem the waveform generator needs) — and
-      # separately, this build's gst-plugins-bad does not register an
-      # `rgvolume` element at all (`Gst::ElementFactory.make("rgvolume")`
-      # returns nil here), so upstream's filter bin could not be built even
-      # off a raw playbin. So the mode is recorded and
-      # `replaygain_available?` is false — the state upstream is in whenever
-      # the ReplayGain elements are missing, which disables the window's
-      # win.replaygain action.
+      # own playbin and installs it as the pipeline's audio-filter —
+      # {ReplayGainFilter} above does the same thing here. When this build's
+      # gst-plugins-bad has no `rgvolume`/`rglimiter` elements,
+      # {ReplayGainFilter.build} returns nil and #replaygain_available? is
+      # false, matching upstream's own behaviour whenever those elements are
+      # missing.
       def set_replaygain(mode)
         @replaygain = mode
+        @replaygain_filter&.apply(gst_player.pipeline, mode)
       end
 
       def replaygain = @replaygain
 
-      def replaygain_available? = false
+      def replaygain_available? = !@replaygain_filter.nil?
 
       private
 
-        def media = @media ||= Gtk::MediaFile.new
+        def gst_player = @gst_player ||= GstPlay::Play.new
 
-        def connect_signals
-          media.signal_connect("notify::ended") do |stream, _param|
-            if stream.ended?
-              stop_position_updates
-              @sender.call(:play_next)
-            end
-          end
+        def configure_player
+          gst_player.set_video_track_enabled(false)
+          gst_player.set_config(
+            gst_player.config.tap do |config|
+              config.set_value(
+                "position-update-interval",
+                GLib::Value.new(GLib::Type::UINT, POSITION_UPDATE_INTERVAL),
+              )
+            end,
+          )
+        end
 
-          media.signal_connect("notify::error") do |stream, _param|
-            unless stream.error.nil?
-              warn("GStreamer error: #{stream.error.message}")
-            end
-          end
-
-          media.signal_connect("notify::volume") do |stream, _param|
-            @sender.call(:volume_changed, linear_to_cubic(stream.volume))
+        def watch_bus
+          gst_player.message_bus.add_watch do |_bus, message|
+            handle_message(message)
+            true
           end
         end
 
-        def start_position_updates
-          if @position_source.nil?
-            @position_source = GLib::Timeout.add(POSITION_UPDATE_INTERVAL) do
-              send_position(media.timestamp / USECS_PER_SEC, false)
-              true
-            end
+        def handle_message(message)
+          case message.structure["play-message-type"].value
+          when GstPlay::PlayMessage::ERROR then handle_error(message)
+          when GstPlay::PlayMessage::WARNING then handle_warning(message)
+          when GstPlay::PlayMessage::END_OF_STREAM then @sender.call(:play_next)
+          when GstPlay::PlayMessage::POSITION_UPDATED then handle_position_updated(message)
+          when GstPlay::PlayMessage::SEEK_DONE then handle_seek_done(message)
+          when GstPlay::PlayMessage::VOLUME_CHANGED then handle_volume_changed(message)
           end
         end
 
-        def stop_position_updates
-          unless @position_source.nil?
-            GLib::Source.remove(@position_source)
-            @position_source = nil
+        def handle_error(message)
+          GstPlay::PlayMessage.parse_error(message).then do |error, _debug|
+            warn("GStreamer error: #{error.message}")
           end
+        end
+
+        def handle_warning(message)
+          GstPlay::PlayMessage.parse_warning(message).then do |error, _debug|
+            warn("GStreamer warning: #{error.message}")
+          end
+        end
+
+        def handle_position_updated(message)
+          GstPlay::PlayMessage.parse_position_updated(message).then do |position|
+            send_position(position / Gst::SECOND, false)
+          end
+        end
+
+        def handle_seek_done(message)
+          GstPlay::PlayMessage.parse_seek_done(message).then do |position|
+            send_position(position / Gst::SECOND, true)
+          end
+        end
+
+        def handle_volume_changed(message)
+          @sender.call(:volume_changed, linear_to_cubic(GstPlay::PlayMessage.parse_volume_changed(message)))
         end
 
         def send_position(position, notify)
