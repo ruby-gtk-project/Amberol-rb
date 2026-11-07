@@ -194,8 +194,8 @@ module Amberol
     def skip_to_action
       @skip_to_action ||= Gio::SimpleAction.new("skip-to", GLib::VariantType.new("u")).tap do |simple|
         simple.signal_connect("activate") do |_simple_action, parameter|
-          parameter.then do |position|
-            @player.skip_to(position.get)
+          unwrap_variant(parameter).then do |position|
+            @player.skip_to(position)
             @player.play
           end
         end
@@ -224,11 +224,26 @@ module Amberol
         GLib::Variant.new(@settings.string("replay-gain")),
       ).tap do |simple|
         simple.signal_connect("activate") do |simple_action, parameter|
-          parameter.get.to_s.then do |nick|
+          unwrap_variant(parameter).to_s.then do |nick|
             simple_action.state = GLib::Variant.new(nick)
             self.replaygain = nick.to_sym
           end
         end
+      end
+    end
+
+    # A parameterised action's "activate" signal hands back the parameter
+    # already unboxed to a native Ruby value (an Integer for "u", a String
+    # for "s") rather than the GLib::Variant the C API documents — a
+    # ruby-gnome marshalling quirk, not a value this port controls. Calling
+    # `.get` on it, the way the GVariant docs would have it, raises
+    # NoMethodError; this accepts either shape so a future binding fix that
+    # starts handing back a real Variant keeps working too.
+    def unwrap_variant(value)
+      if value.respond_to?(:get)
+        value.get
+      else
+        value
       end
     end
 
@@ -739,7 +754,13 @@ module Amberol
       def on_files_chosen
         begin
           files = yield
-        rescue GLib::Error
+        rescue GLib::ErrorInfo
+          # Dismissing the chooser (Escape, the window's close button, or the
+          # portal's own cancel) raises Gtk::DialogError::Dismissed, which is
+          # not a GLib::Error despite GTK's own docs describing the finish
+          # call as raising one — it shares GLib::ErrorInfo with GLib::Error
+          # instead. Rescuing only GLib::Error here let a plain cancel crash
+          # the app.
           files = nil
         end
 

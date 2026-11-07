@@ -8,6 +8,9 @@ Gemfile.lock
 /tmp/*
 !/tmp/.gitignore
 *.gem
+
+# Screenshots test/drive_window.rb writes on each run
+/test/tmp/
 # Bundler
 /.bundle/
 /vendor/bundle*/
