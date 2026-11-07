@@ -16,6 +16,33 @@ module Amberol
     #
     # `sender` is the proc the player hands over; it takes an action name and
     # its arguments, exactly as upstream's glib::Sender takes a PlaybackAction.
+    #
+    # On driving upstream's actual backend, `gst_play::Play` (the `gstreamer_play`
+    # gem's GstPlay::Play), directly instead of going through Gtk::MediaFile:
+    # it loads fine on its own, but the moment `GstPlay::Play.new` runs in a
+    # process that has also `require "gstreamer"` loaded — which this app's
+    # own {WaveformGenerator} does, for `Gst.parse_launch` and `Gst::Bus`, a
+    # need GstPlay cannot fill since it builds only a `playbin3` — GLib logs
+    #
+    #   GLib-GObject-CRITICAL **: g_object_get: assertion 'G_IS_OBJECT (object)' failed
+    #
+    # and the process segfaults inside ruby-gnome's own glib2 log handler
+    # (`rbglib_log_handler` -> `g_logv`) before a single playback call is
+    # made. Reproduced repeatedly, in every require order tried (gstreamer
+    # before gstreamer_play, after, with and without gtk4/adwaita loaded
+    # first): both gems independently bind the shared `Gst-1.0` typelib into
+    # two distinct sets of Ruby wrapper classes for the same GTypes, and that
+    # double registration is fatal as soon as either binding's code actually
+    # touches a live GObject, not merely from requiring both.
+    #
+    # Since this app also needs the `gstreamer` gem's raw `Gst` namespace for
+    # waveform analysis (see {WaveformGenerator}), and a C-level segfault
+    # cannot be rescued from Ruby, `gstreamer_play` cannot be wired into the
+    # live playback path without taking the whole app down. The dependency
+    # is kept — GstPlay/GstBadAudio is genuinely what upstream uses for
+    # playback and ReplayGain — but this backend does not call it; see
+    # `set_replaygain`/`replaygain_available?` below for the one feature
+    # (upstream's rgvolume/rglimiter ReplayGain filter) that gap leaves open.
     class GstBackend
       # Upstream configures GstPlay with a 250ms position update interval.
       POSITION_UPDATE_INTERVAL = 250
@@ -93,11 +120,19 @@ module Amberol
 
       def volume = linear_to_cubic(media.volume)
 
-      # Upstream builds an rgvolume/rglimiter filter bin and installs it as
-      # the playbin's audio-filter; GTK's media backend exposes no hook to
-      # install one on, so the mode is recorded and `replaygain_available?` is
-      # false — the state upstream is in whenever the ReplayGain elements are
-      # missing, which disables the window's win.replaygain action.
+      # Upstream builds an rgvolume/rglimiter filter bin via `gst_play::Play`'s
+      # own playbin and installs it as the pipeline's audio-filter. Doing
+      # that here would mean driving the backend through `gstreamer_play`'s
+      # GstPlay::Play instead of Gtk::MediaFile — see the class comment above
+      # for why that reproducibly segfaults this app (it shares a process
+      # with the `gstreamer` gem the waveform generator needs) — and
+      # separately, this build's gst-plugins-bad does not register an
+      # `rgvolume` element at all (`Gst::ElementFactory.make("rgvolume")`
+      # returns nil here), so upstream's filter bin could not be built even
+      # off a raw playbin. So the mode is recorded and
+      # `replaygain_available?` is false — the state upstream is in whenever
+      # the ReplayGain elements are missing, which disables the window's
+      # win.replaygain action.
       def set_replaygain(mode)
         @replaygain = mode
       end
