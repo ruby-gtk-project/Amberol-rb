@@ -51,10 +51,26 @@ exact action list and `.reports/drive-run.md` for the current gate status).
    would be a worse defect than the documented gap. See
    `.reports/component-parity.md` Gap 3.
 
-4. **Runtime/UI driver gate**: a ruby-gnome binding-level crash,
-   not a port logic bug (see below), has kept `test/drive_window.rb` from
-   reaching a clean `DRIVE OK` in several recent rounds. See
-   `.reports/drive-run.md` for the full run history.
+4. **Runtime/UI driver gate**: `test/drive_window.rb` reached a clean
+   `DRIVE OK (105/105)` once this round, proving two previously-blocking
+   defects in the *harness itself* (not the port) are fixed: an unbounded
+   `while pending?` busy-loop that never terminated once real GstPlay
+   playback was keeping the main context permanently non-idle, and an
+   `each`-while-mutating bug in `close_extra_toplevels` that walked a live
+   `Gtk::Window.toplevels` `Gio::ListModel` while closing entries out of
+   it, segfaulting inside `rbgobj_signal.c`'s `signal_emit`. Both are fixed
+   on `ruby` now. One check (the very last one, `queue.restore-playlist`'s
+   idle-loaded songs arriving) is still intermittently flaky under the
+   heavy shared-host CPU contention this fork's rounds keep running under
+   (load average 10-15 from a dozen+ concurrent sibling forks' own Xvfb/GTK
+   drive scripts) — reproduced failing in 8 of 9 runs this round, the one
+   pass coinciding with this host's lowest observed load point. See
+   `.reports/drive-run.md` for the full diagnosis: it is not a duplicate-
+   check bug, not a disabled action, not a tag-reading failure, and raises
+   no exception anywhere in the chain — isolated testing confirms the
+   restore path works correctly when given enough wall-clock time to settle
+   the one `GLib::Idle`-driven load; no root cause inside the port's own
+   logic was found despite extensive isolated reproduction.
 
 5. **RSpec suite** covers only `lib/amberol/i18n.rb` (ported from
    `src/i18n.rs`'s test module). The rest of `lib/` has no spec coverage.

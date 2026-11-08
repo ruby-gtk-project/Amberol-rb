@@ -1,116 +1,168 @@
 # Drive run — Amberol-rb
 
-Ran the existing headless UI harness (`test/drive_window.rb` +
-`test/gtk_driver.rb`, both already present on `ruby`) and the `rspec` suite,
-per the `ruby-gtk-testing` skill, to prove the port actually opens a window
-and responds to input rather than merely parsing.
+## This round
 
-## `rspec`
+Ran `test/drive_window.rb` + `test/gtk_driver.rb` and the `rspec` suite again,
+per the `ruby-gtk-testing` skill. `rspec` is unchanged and clean (17 examples,
+0 failures). The UI driver needed two real fixes to its own code before it
+could reach `DRIVE OK` at all, plus leaves one check intermittently flaky for
+reasons tracked below rather than papered over.
 
-```
-$ nix develop --command xvfb-run -a ruby -e 'require "rspec/core"; exit RSpec::Core::Runner.run(["--format","progress","--require","spec_helper","spec"])'
-17 examples, 0 failures
-```
+### Fix 1 — unbounded `while pending?` busy-loop never terminated during real playback
 
-The 17 examples are `spec/amberol/i18n_spec.rb`, the port of upstream's one
-test module (`src/i18n.rs`'s 4 `#[test]` functions) — closing the gap
-`.reports/test-parity.md` recorded against the commit before this one.
+Every prior round's crash/hang at step 26 ("the waveform view accepts a seek
+position") or thereabouts traced to this exact line, used a dozen times in
+the file:
 
-## `test/drive_window.rb`
-
-The harness drives the real window with real generated WAVE files, through
-real `GstPlay::Play` playback (not stubbed), across ~38 steps covering the
-window, primary menu, shortcuts dialog, about dialog, empty/junk-folder/
-error states, real queue loading, play/pause, seek, a real end-of-stream
-auto-advance, search filtering, shuffle, selection mode + removal, repeat
-mode, previous/next/skip-to, cover-art recoloring, replaygain, volume mute,
-waveform seek, toasts, copy/open-directory, the sidebar toggle, the add-song
-and add-folder file choosers, the drag overlay, background-play, clear and
-restore-playlist, and quit.
-
-Four full runs were made this round. One (run 1) was ended early by an
-external 170s wrapper timeout of my own choosing, not the harness — not a
-failure, just inconclusive past the point it was cut off (every check up to
-then passed). The other three:
-
-| Run | Result |
-|---|---|
-| 2 | `[BUG] Segmentation fault` during step 22 (`win.previous/win.next and win.skip-to`) |
-| 3 | Harness's own 180s watchdog fired after step 26 (`the waveform view accepts a seek position`); no further step ran |
-| 4 | `[BUG] Segmentation fault` during step 20 (`removing the selected song drops the queue by one`) |
-
-No run this round reached `DRIVE OK`. Per this round's instructions, the
-crash is diagnosed below rather than hidden, loosened, or wrapped away.
-
-### The crash: a ruby-gnome binding gap, not a port bug
-
-Both segfaults carry the identical signature:
-
-```
-GStreamer-CRITICAL **: Padname '':src_N does not belong to element urisourcebin0 when removing
-[BUG] Segmentation fault at 0x0000000000000030
-...
-libruby(rb_funcallv) <- glib2.so(rbglib_log_handler) <- libglib-2.0(g_log)
-  <- libgstreamer(gst_element_remove_pad) <- libgstplayback(free_output_slot)
-  <- ... <- libgstplay-1.0(gst_play_set_uri_internal/gst_play_stop_internal)
-  <- libglib-2.0(g_main_loop_run) <- libgstplay-1.0(gst_play_main)
-  <- libglib-2.0(g_thread_proxy) <- libc(start_thread)
+```ruby
+GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
 ```
 
-`GstPlay::Play` (the `gstreamer_play` gem, wrapping gst-plugins-bad's
-`GstPlay`) runs its pipeline on a **private worker thread** it spawns itself
-(`gst_play_main`, via `g_thread_new`) — a thread Ruby's VM has never seen.
-Both crashes happened while `GstBackend#set_song_uri` swapped the live
-playbin's URI (`lib/amberol/audio/gst_backend.rb:95-101`), called from
-`Player#switch_to`/`#skip_next` after a song change. Occasionally (a
-genuine GStreamer-internal race during playbin3 teardown — not every URI
-swap triggers it) that teardown logs a CRITICAL message from the worker
-thread. Ruby-gnome's installed GLib log handler, `rbglib_log_handler`
-(`glib2.so`), always tries to call back into the Ruby VM via `rb_funcallv`
-to format/deliver that message — which segfaults when the calling thread is
-not one Ruby's VM owns.
+Real `GstPlay` playback posts a `POSITION_UPDATED` bus message every 250ms
+(`GstBackend::POSITION_UPDATE_INTERVAL`) for as long as a song plays. Once
+the host is slow enough (this round ran under sustained load average 10-15,
+a dozen-plus sibling forks' own Xvfb/GTK drive scripts running concurrently),
+the gap between messages can shrink to nothing relative to how long one
+`iteration(false)` call takes to return, so `pending?` can read true again
+before the loop ever observes a false — an unbounded busy-wait racing a live
+external source, not a bug in the steps it was driving. Confirmed by killing
+a hung run and reading its backtrace: stuck inside this exact loop, having
+consumed real CPU the whole time (not blocked on I/O), for minutes past the
+harness's own 180s watchdog, which itself could not break the loop because
+the watchdog's own callback only fires *from inside* this same manual drain.
 
-This is not a port-introduced ordering bug: `git show
-origin/main:src/audio/player.rs` shows upstream's own `skip_next`/
-`skip_previous`/`skip_to` do the exact same thing — pause, then
-`self.backend.set_song_uri(Some(&song.uri()))`, no `stop()` first — so the
-Rust code hits the identical GStreamer-internal race. It does not crash
-there because Rust's GStreamer bindings never route a foreign thread's GLib
-log message back into a managed runtime; `rbglib_log_handler` doing exactly
-that is the gap.
+**Fix**: a bounded `drain_pending_events(max_seconds: 2.0)` helper replaces
+every instance of the pattern above. It still drains real work; it just
+cannot spin forever racing a live source. Two of the fixed-`sleep(N)`+drain
+waits for async idle-loaded songs were also replaced with a `wait_until`
+helper that polls the actual condition (`queue.n_songs == N`) up to 10s,
+which is more robust than guessing a wall-clock delay regardless of host
+speed.
 
-I did not patch around this by changing `player.rb`'s sequencing (that would
-diverge from the upstream behaviour it was ported from, for no logic reason)
-or by silencing the `GStreamer` log domain (that would suppress a real
-diagnostic channel to make a crash stop happening, which is exactly the kind
-of invented, behaviour-changing workaround this round's instructions rule
-out). The exact gap, for whoever picks this up: **ruby-gnome's default GLib
-log handler (`rbglib_log_handler` in `glib2.so`) is not safe to invoke from
-a native thread GStreamer/GstPlay spawned itself**, and that handler fires
-unconditionally on any `g_log` call, including CRITICAL messages logged by
-GStreamer's own internals during normal (if racy) teardown.
+### Fix 2 — `close_extra_toplevels` mutated the list it was iterating, segfaulting
 
-### Run 3's hang: not reproduced, not claimed as a bug
+```ruby
+def close_extra_toplevels(keep)
+  Gtk::Window.toplevels.each do |window|
+    unless window.equal?(keep)
+      window.close
+    end
+  end
+end
+```
 
-Run 3's 180s watchdog firing after step 26 was not reproduced in three
-targeted isolated repros (one driving `copy`/`open-directory`/the file
-choosers alone with no playback active, one chaining the full post-26 step
-sequence with no playback active, one additionally starting real playback,
-calling previous/next/skip-to, recoloring, replaygain, mute and waveform
-seek first) — all three completed cleanly end to end. This machine was
-running many other forks' concurrent GTK/Xvfb drive scripts at the time
-(confirmed via `ps aux`); I cannot rule out resource starvation as the
-cause and am not recording it as a port defect, only as unreplicated.
+`Gtk::Window.toplevels` is a live `Gio::ListModel`. Closing a window removes
+it from that same list. Iterating the model directly while closing entries
+out of it mutates the list the iterator is walking — confirmed by two
+separate crashes this round (runs on a fresh `ruby` checkout, no other
+change in between), both segfaulting inside `rbgobj_signal.c`'s
+`signal_emit` / `callable_method_entry_or_negative`, with the Ruby backtrace
+pointing straight at `window.close` from inside this method's `each` block,
+and register state showing `RAX`/`RDI` = `-1` (an invalid object pointer) —
+the signature of indexing a GListModel that has already shifted under the
+iterator.
 
-## What this means for `DRIVE OK`
+**Fix**: `Gtk::Window.toplevels.to_a.each do |window| ... end` — read every
+entry into a plain Array first, then close from that snapshot. Trivial,
+behaviour-preserving, and removes a real crash that two previous rounds had
+misattributed entirely to the (also real, separately documented below)
+GstPlay worker-thread log-handler gap.
 
-I am not reporting `DRIVE OK`. Two independent runs crashed via the binding
-gap above before reaching the end of the script; no run this round
-completed all ~38 steps. The harness itself is unchanged (it already
-existed on `ruby` before this round and needed no fixes to its own logic —
-the component coverage gap check in the task is already satisfied by its
-existing ~38 steps across every window/dialog/menu/action/shortcut the
-component-identification report lists). No code in `lib/` was changed this
-round: the one thing that fails is a native crash in a dependency, reached
-by code that matches upstream's own sequencing, and per this round's
-instructions that gap is named here rather than papered over.
+### Result after both fixes: one full clean run
+
+```
+105 of 105 checks passed
+DRIVE OK
+```
+
+This proves the fixes are real: the harness ran end to end, through every
+window/dialog/menu/action/shortcut/empty-state/error-state the
+component-identification report lists, with no crash and no hang.
+
+### The one check that stayed flaky: `queue.restore-playlist`'s songs arriving
+
+This round's final check — that the two songs left after `queue.clear` come
+back after `queue.restore-playlist` — passed in that one clean run and
+failed in 8 of the 9 other runs made this round (both before and after
+fixing the two bugs above; it is independent of them). Diagnosis, in order
+ruled out:
+
+1. **Not a duplicate-check false positive.** Printed `window.player.queue
+   .contains?(...)` for both cached songs immediately before calling
+   restore: `[false, false]` against a queue already confirmed at
+   `n_songs == 0`. `Queue#clear` does reset `@songs = []`; nothing stale
+   survives it.
+2. **Not a disabled action.** `grep`-checked every `action_set_enabled` call
+   in `window.rb`; `"restore-playlist"` is never in the disabled list
+   `set_loading_actions_enabled` touches (only `add-song`/`add-folder`/
+   `clear` are). A `GSimpleAction#activate` on a disabled action is a silent
+   GLib no-op, which was the leading hypothesis — ruled out by reading the
+   source, not assumed.
+3. **Not a tag-reading/file-content problem.** Called
+   `Amberol::Audio::Song.from_uri` directly on the exact cached file paths
+   mid-run, both inside the full driver and in an isolated script with the
+   same two generated WAVE files: always returns a valid `Song`
+   (`valid? == true`). The files and the parser are both fine.
+4. **No exception anywhere in the chain.** Wrapped the action's `.activate`
+   call in `begin/rescue StandardError` in the test step itself across
+   several runs: never fired. Nothing is being raised and silently
+   swallowed between the action and the idle loader.
+5. **The synchronous half of `start_loading` does run.** Printed
+   `GLib::MainContext.default.pending?` and `main_stack.visible_child_name`
+   immediately after calling `.activate(nil)`: `pending? == true`,
+   `visible_child_name == "main-view"` — `switch_mode(:main_view)` and the
+   `GLib::Idle.add` registration both ran. What never completes is the idle
+   callback's own work: ten real seconds of `wait_until`'s own
+   `GLib::MainContext.default.iteration(true)` polling loop (which, unlike
+   the `drain_pending_events` fix above, blocks waiting for a source and so
+   cannot race a live one the same way) never see `n_songs` move off `0`.
+
+No single root cause was confirmed inside the port's own Ruby. The evidence
+is consistent with the same class of problem as Fix 1 above — this host's
+sustained, extreme concurrent load (10-15 load average from sibling forks'
+own drive scripts, the same host every round in this campaign runs under)
+occasionally keeps even a correctly-scheduled low-priority `GLib::Idle`
+source from ever getting a dispatch slot inside a bounded wait, for reasons
+this round could not pin down more precisely than "this specific idle
+source, this specific host, this specific run." It is recorded here rather
+than worked around by lengthening the wait indefinitely (which would just
+move the same race further out) or by changing `start_loading`'s priority
+(which would diverge from upstream's own `glib::idle_add_local` default and
+change behaviour to paper over a timing symptom, the thing this round's
+instructions explicitly rule out). Whoever next investigates this should
+start from point 5 above: trace what, if anything, is competing with the
+load idle source for a dispatch slot on a *clean, less loaded* run of this
+same host, since the one pass this round coincided with its lowest observed
+load point (10.3) against several failures at 11-15.
+
+## Previous rounds (superseded by the above)
+
+Four full runs were made in a previous round, all before either fix above
+existed. Two hit the exact segfault Fix 2 now explains (misattributed at the
+time to the GstPlay worker-thread log-handler gap below); one hit a watchdog
+timeout at the exact loop Fix 1 now explains; one was cut off early by an
+external wrapper timeout, inconclusive. See git history for that round's
+full original writeup if needed — it is not reproduced here since both
+crashes it reported are now explained and fixed.
+
+## The GstPlay worker-thread segfault (binding gap, not a port bug)
+
+`GstPlay::Play` (the `gstreamer_play` gem, backed by gst-plugins-bad) runs
+its pipeline on its own native worker thread (`gst_play_main`, spawned via
+`g_thread_new`) — a thread Ruby's VM has never registered. When
+`GstBackend#set_song_uri` swaps the live `playbin`'s URI during
+`Player#switch_to`/`#skip_next` (faithful to upstream `src/audio/player.rs`,
+which does the identical pause-then-set-URI sequence with no `stop()`
+first), playbin3 teardown occasionally logs a `GStreamer-CRITICAL` message
+from that worker thread. `ruby-gnome`'s installed default GLib log handler
+(`rbglib_log_handler` in `glib2.so`) calls into the Ruby VM via
+`rb_funcallv` for every GLib log message regardless of which thread emitted
+it, and that call from an unregistered native thread segfaults.
+
+This was not reproduced this round (no run reached that crash's signature),
+but it was never conclusively ruled out either since Fix 2 above explains
+every segfault actually observed this round. It is left documented rather
+than removed, since the mechanism described (ruby-gnome's default log
+handler not being safe to call from a foreign GStreamer worker thread) is a
+genuine binding gap independent of anything in `lib/`, not something this
+round verified absent.

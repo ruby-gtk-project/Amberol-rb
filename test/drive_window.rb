@@ -58,10 +58,52 @@ def write_junk_folder(directory)
   directory
 end
 
+# Drains whatever GTK/GLib work is immediately queued (layout, a redraw, a
+# posted signal) so the next line sees the settled result, the way `step`'s
+# own timeout tick does between steps.
+#
+# Bounded, not `while pending?` unbounded: once real playback is running,
+# GstPlay's bus keeps posting a POSITION_UPDATED message every 250ms
+# (`Amberol::Audio::GstBackend::POSITION_UPDATE_INTERVAL`) for as long as a
+# song plays, so "keep iterating until nothing is pending" can see a fresh
+# message arrive just as the last one drains and never observe a true gap -
+# a live external source, not a bug in the steps being driven. A step that
+# needs the settled state of something slower calls this in a loop itself
+# (see "GstPlay actually plays audio" below).
+def drain_pending_events(max_seconds: 2.0)
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + max_seconds
+  while GLib::MainContext.default.pending? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+    GLib::MainContext.default.iteration(false)
+  end
+end
+
+# Songs load from a `GLib::Idle` callback (one file per main-loop tick, so a
+# big folder never freezes the window), so "wait a fixed amount of wall time"
+# is a guess about how many ticks the host gets to run in that time. Polling
+# the actual condition is the same idea `GtkDriver`'s own step tick uses, just
+# inlined for a wait that needs to happen inside one step rather than across
+# several.
+def wait_until(max_seconds: 10.0)
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + max_seconds
+  until yield
+    break unless Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+
+    GLib::MainContext.default.iteration(true)
+  end
+end
+
 # Closes any extra toplevel the run opened (a file chooser, say) without
 # waiting on a response nothing in this harness can supply.
+#
+# `Gtk::Window.toplevels` is a live `Gio::ListModel`: closing a window
+# removes it from that same list, so iterating the model directly while
+# closing entries from it mutates the list out from under the iterator -
+# the next `each` step then indexes into a list that has already shifted,
+# which segfaulted (`rbgobj_signal.c` inside `window.close`'s `signal_emit`)
+# rather than raising. Reading every entry into a plain Array first, before
+# closing any of them, keeps the two steps from interleaving.
 def close_extra_toplevels(keep)
-  Gtk::Window.toplevels.each do |window|
+  Gtk::Window.toplevels.to_a.each do |window|
     unless window.equal?(keep)
       window.close
     end
@@ -137,7 +179,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       d.check("it builds a dialog") { dialog.is_a?(Adwaita::ShortcutsDialog) }
       window = application.send(:built_window)
       dialog.present(window.window)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.shot("02-shortcuts", window.window)
       dialog.close
     end
@@ -148,7 +190,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       d.check("it carries the GPL-3.0 licence") { dialog.license_type == Gtk::License::GPL_3_0 }
       window = application.send(:built_window)
       dialog.present(window.window)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.shot("03-about", window.window)
       dialog.close
     end
@@ -171,7 +213,7 @@ Dir.mktmpdir("amberol-drive") do |root|
 
     d.step("loading settles on 'No songs found', nothing queued") do
       sleep(0.3)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       window = application.send(:built_window)
       d.check("the queue is still empty") { window.player.queue.n_songs.zero? }
     end
@@ -183,8 +225,8 @@ Dir.mktmpdir("amberol-drive") do |root|
 
     # Songs are loaded from an idle callback.
     d.step("wait for loading") do
-      sleep(0.5)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      window = application.send(:built_window)
+      wait_until { window.player.queue.n_songs == 3 }
     end
 
     d.step("the queue now holds the three tracks, main view showing") do
@@ -252,7 +294,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       # "search-changed" is debounced a little after "changed", so the filter
       # needs a turn of the loop before it applies.
       sleep(0.3)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.check("only track 2 is visible") { window.visible_songs.map(&:title) == ["Track 2"] }
     end
 
@@ -289,7 +331,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       d.check("the selection count label updates") do
         window.playlist_view.queue_selected_label.label == "1 song selected"
       end
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.shot("05-selection-mode")
     end
 
@@ -376,7 +418,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       window = application.send(:built_window)
       window.waveform_view.position = 0.5
       d.check("position round-trips") { window.waveform_view.position == 0.5 }
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.shot("06-waveform")
     end
 
@@ -405,7 +447,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       before = Gtk::Window.toplevels.n_items
       window.queue_actions.lookup_action("add-song").activate(nil)
       sleep(0.2)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.check("a new toplevel appeared for the chooser") { Gtk::Window.toplevels.n_items > before }
       close_extra_toplevels(window.window)
     end
@@ -415,7 +457,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       before = Gtk::Window.toplevels.n_items
       window.queue_actions.lookup_action("add-folder").activate(nil)
       sleep(0.2)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.check("a new toplevel appeared for the chooser") { Gtk::Window.toplevels.n_items > before }
       close_extra_toplevels(window.window)
     end
@@ -444,7 +486,7 @@ Dir.mktmpdir("amberol-drive") do |root|
       window.queue_actions.lookup_action("clear").activate(nil)
       d.check("the queue is empty") { window.player.queue.n_songs.zero? }
       d.check("the initial view is back") { window.main_stack.visible_child_name == "initial-view" }
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
+      drain_pending_events
       d.shot("07-cleared")
     end
 
@@ -460,9 +502,8 @@ Dir.mktmpdir("amberol-drive") do |root|
     end
 
     d.step("wait for the restore to finish loading") do
-      sleep(0.5)
-      GLib::MainContext.default.iteration(false) while GLib::MainContext.default.pending?
       window = application.send(:built_window)
+      wait_until { window.player.queue.n_songs == 2 }
       d.check("the two remaining songs came back") { window.player.queue.n_songs == 2 }
     end
 
