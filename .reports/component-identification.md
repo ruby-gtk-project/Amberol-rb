@@ -3,9 +3,10 @@
 Scope: the whole app, one unit per upstream top-level widget/class (as
 `.reports/component-inventory.md` from the previous round already enumerates
 in detail — 37 units, file-by-file, with widget/CSS/signal tables). This pass
-re-walks that inventory against the current `ruby` HEAD (`bb2d931`) and
-upstream `origin/main` (`3830fbb`), and records what changed and what that
-inventory did not catch.
+re-walks that inventory against the current `ruby` HEAD (`5fc06dc`) and
+upstream `origin/main` (`3830fbb`, unchanged this round), and records what
+changed and what that inventory did not catch, including two corrections to
+this document's own prior round (below).
 
 ## What is still accurate
 
@@ -63,17 +64,37 @@ This is recorded here as a component-identification finding (the component is
 the accessible name, not just the visible label) and carried into
 `component-parity.md` and `translation-parity.md` as the same underlying gap.
 
+## One item closed since the last round of this document (correction)
+
+- `PULSE_PROP_*` **is now set at startup.** Commit `e9f7ae4` added
+  `ENV["PULSE_PROP_application.icon_name"]`/`...application.metadata().name`/
+  `...media.role` to `lib/amberol.rb:9-11`, ported from upstream's
+  `src/main.rs`. Confirmed by reading the current file. The prior round of
+  this document (and of `component-parity.md`) still listed this as open;
+  that was true when written and is stale now — corrected here rather than
+  copied forward unchecked.
+
 ## Still-open items from the prior survey, re-verified true today
 
 - No XDG background portal request (`lib/amberol/application.rb:105-106`
   comments it as known-missing; `app.background-play` only holds/releases the
   app, it never calls the portal).
-- No `PULSE_PROP_*` set on startup (upstream's `main.rs` sets the PulseAudio
-  media role/app name; no equivalent in `lib/amberol.rb` or `exe/amberol`).
 - Settings are a JSON file under `XDG_CONFIG_HOME`
   (`lib/amberol/settings.rb:10-56`), not a compiled GSettings schema — no
   `data/*.gschema.xml` ships, so nothing outside the app (dconf-editor, other
   processes) can read or set these keys.
+- The 8 widgets missing `C_("a11y", ...)` accessible name/description
+  (table above) — re-confirmed by re-running the same greps this round;
+  still zero hits.
 
-These three are unchanged from the previous round's "Remaining work" and are
+These are unchanged from the previous round's "Remaining work" and are
 re-confirmed here by reading the current files, not copied forward.
+
+## Test posture, read alongside this inventory
+
+Upstream's one test module (`src/i18n.rs`, 4 `#[test]` functions) now has a
+ported RSpec counterpart (`spec/amberol/i18n_spec.rb`, added in `e9f7ae4`,
+17 examples covering all 4 upstream tests, `0 failures` reproduced this
+round). See `.reports/test-parity.md` for the full ledger — this is the
+other correction this round makes to the previous round's documents, which
+still said 0/4 ported.

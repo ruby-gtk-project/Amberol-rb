@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Upstream | `main` @ `3830fbb` |
-| Port | `ruby` @ `bb2d931` |
+| Upstream | `main` @ `3830fbb` (unchanged this round) |
+| Port | `ruby` @ `5fc06dc` |
 | Domain | `amberol` (upstream `po/meson.build`: `project_name()` = `amberol`; port `lib/amberol/config.rb:26`: `GETTEXT_PACKAGE = "amberol"` — **matches**, by hand; see note below) |
 | Upstream messages | 76 |
 | Ported | 63 |
@@ -196,3 +196,10 @@ automated scanner output (12/76) suggests, and materially worse than "done"
 — both of those would be false reports, which is why this ledger is written
 from a hand census with the scanner's specific failure mode named, per the
 skill's instruction not to report a broken check's number as if it passed.
+
+**Re-verified this round** (port HEAD moved `bb2d931` → `5fc06dc` since the
+previous version of this document; upstream `origin/main` did not move):
+`grep -rn '"a11y"' lib/ exe/` still returns no hits, the 13 gaps above are
+unchanged, and nothing in this round's commits (`PULSE_PROP_*` startup
+properties, the ported `i18n_spec.rb`) touches translation/accessibility
+text. The count is 13/76 again, not copied forward — checked, not assumed.

@@ -3,8 +3,14 @@
 | | |
 |---|---|
 | Upstream | `main` @ `3830fbb` |
-| Port | `ruby` @ `bb2d931` |
+| Port | `ruby` @ `5fc06dc` |
 | Units with full (4-axis) parity | not all — see gaps below |
+
+**Correction to the previous round of this document:** its "Gap 4 —
+No `PULSE_PROP_*`" has been closed since that round, by commit `e9f7ae4`
+(`lib/amberol.rb:9-11`). This round re-verifies that by reading the current
+file and drops it from the open-gaps list below; it is not carried forward
+unchecked. Three gaps remain open.
 
 This builds on `.reports/component-identification.md` and
 `.reports/component-inventory.md` (the previous round's full 37-unit, file-by-
@@ -81,12 +87,16 @@ sandboxed (Flatpak) build this would be killed instead of continuing to play
 in the background, which is the entire point of the feature. **Verdict:
 gap** (re-verified).
 
-## Gap 4 — No `PULSE_PROP_*` set at startup (re-confirmed)
+## Gap 4 (closed) — `PULSE_PROP_*` at startup
 
-Upstream's `src/main.rs` sets the PulseAudio media-role/app-name properties so
-the Sound panel labels the Amberol stream correctly; no equivalent call exists
-in `lib/amberol.rb` or `exe/amberol`. **Verdict: gap** (re-verified, cosmetic
-but real — the audio stream is unlabeled in the system mixer).
+Upstream's `src/main.rs` sets the PulseAudio media-role/app-name properties
+so the Sound panel labels the Amberol stream correctly. As of `e9f7ae4`,
+`lib/amberol.rb:9-11` sets the same three `ENV["PULSE_PROP_*"]` keys before
+`amberol/application` loads. **Verdict: closed**, confirmed by reading the
+current file this round. (Not re-tested against the live PulseAudio/PipeWire
+mixer — that is an external-system assertion no headless CI run can make —
+but the call is present, matches upstream's three keys, and runs at the
+right point in startup.)
 
 ## Summary
 
@@ -95,10 +105,20 @@ but real — the audio stream is unlabeled in the system mixer).
 | 8 widgets missing `C_("a11y", ...)` accessible name/description | text + behaviour | real — breaks screen-reader use of core transport controls |
 | Settings are JSON, not GSettings | behaviour (external access) | real — pre-existing, documented in-line |
 | No background portal request | behaviour | real — pre-existing |
-| No `PULSE_PROP_*` | behaviour (cosmetic) | real — pre-existing |
+| ~~No `PULSE_PROP_*`~~ | — | **closed this round** (see above) |
 
 Everything else checked against upstream's `.blp`/`.rs` files and driven
-through `test/drive_window.rb` holds 4-axis parity. The port is substantial
-and mostly correct; it is not yet at full component parity because of the
-four gaps above, three of which were already known and one of which (the
-accessibility labels) is new in this audit.
+through `test/drive_window.rb` holds 4-axis parity on the units that run
+clean. The port is substantial and mostly correct; it is not yet at full
+component parity because of the three open gaps above. It is also, per
+`.reports/drive-run.md`, not provably correct end-to-end: two of four runs
+of `test/drive_window.rb` this round segfaulted mid-run (a ruby-gnome GLib
+log-handler/native-thread bug during `GstPlay::Play` URI swaps, diagnosed
+there in full), so no run this round reached `DRIVE OK`. The "confirmed
+parity" claims above, where they rest on `test/drive_window.rb` reaching
+`104/104`, reflect a **prior** green run, not this round's; this round's
+`104 checks passed, 0 failed` gate number is real for the checks that did
+execute before a run crashed or hit its watchdog, but it is not evidence the
+full ~38-step script completes, and is not claimed as such here. Component
+parity and "the driver survives a full run" are tracked as two different
+questions; the second one is currently false.
