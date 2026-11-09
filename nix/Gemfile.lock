@@ -79,11 +79,11 @@ PLATFORMS
 
 DEPENDENCIES
   adwaita
-  gettext (~> 3.4)
+  gettext
   glib2
-  gstreamer (~> 4.4)
-  gstreamer_play (~> 1.1)
+  gstreamer
+  gstreamer_play
   gtk4
 
 BUNDLED WITH
-   2.7.2
+   2.6.9

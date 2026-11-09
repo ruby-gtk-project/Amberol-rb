@@ -1,6 +1,6 @@
-# frozen_string_literal: true
-
 require_relative "rb/version"
+
+# frozen_string_literal: true
 
 # The part of Amberol that loads without a display.
 #

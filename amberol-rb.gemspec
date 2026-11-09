@@ -96,6 +96,13 @@ Gem::Specification.new do |spec|
   spec.executables = ["amberol"]
   spec.require_paths = ["lib"]
 
+  spec.add_dependency("adwaita")
+  spec.add_dependency("gettext", "~> 3.4")
+  spec.add_dependency("glib2")
+  spec.add_dependency("gstreamer", "~> 4.4")
+  spec.add_dependency("gstreamer_play", "~> 1.1")
+  spec.add_dependency("gtk4")
+
   # NOTE: It is preferable to list development dependencies in the gemspec due to increased
   #       visibility and discoverability.
   #       However, development dependencies in gemspec will install on
@@ -108,26 +115,6 @@ Gem::Specification.new do |spec|
   #
   #       Development dependencies that require strictly newer Ruby versions should be in a "gemfile",
   #       and preferably a modular one (see gemfiles/modular/*.gemfile).
-
-  # Runtime: the toolkit the app is built on.
-  spec.add_dependency("glib2")
-  spec.add_dependency("gtk4")
-  spec.add_dependency("adwaita")
-
-  # Runtime: the playback backend. `gstreamer_play` provides GstPlay
-  # (`GstPlay::Play`, which lib/amberol/audio/gst_backend.rb drives directly,
-  # the same way upstream's Rust backend does) and GstBadAudio; `gstreamer`
-  # provides the core Gst namespace (Gst.parse_launch, Gst::Bus,
-  # Gst::ElementFactory) the waveform generator's analysis pipeline and the
-  # backend's rgvolume/rglimiter ReplayGain filter both build on. Both gems
-  # load and run together in the same process without issue.
-  spec.add_dependency("gstreamer_play", "~> 1.1")
-  spec.add_dependency("gstreamer", "~> 4.4")
-
-  # Runtime: the message catalogue. Pure Ruby, needs no system gettext
-  # tooling; lib/amberol/i18n.rb looks it up lazily and falls back to the
-  # msgid itself when it is missing.
-  spec.add_dependency("gettext", "~> 3.4")
 
   # Dev, Test, & Release Tasks
   spec.add_development_dependency("kettle-dev", "~> 3.1", ">= 3.1.26")             # ruby >= 3.4

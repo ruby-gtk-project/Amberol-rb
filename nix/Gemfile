@@ -9,8 +9,8 @@
 source "https://rubygems.org"
 
 gem "adwaita"
-gem "gtk4"
+gem "gettext"
 gem "glib2"
-gem "gstreamer_play", "~> 1.1"
-gem "gstreamer", "~> 4.4"
-gem "gettext", "~> 3.4"
+gem "gstreamer"
+gem "gstreamer_play"
+gem "gtk4"
